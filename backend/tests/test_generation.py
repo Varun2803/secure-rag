@@ -326,11 +326,17 @@ def test_generation_route_sanitizes_provider_unavailability(monkeypatch, tenant_
     assert "private provider detail" not in response.text
 
 
-def test_generation_route_requires_authentication():
-    client = TestClient(create_app())
-    response = client.post(f"/api/v1/tenants/{uuid4()}/generation/answer", json={"query": "q"})
+def test_generation_route_requires_authentication(test_session_factory):
+    app = create_app()
+
+    def override_get_db():
+        with test_session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        response = client.post(f"/api/v1/tenants/{uuid4()}/generation/answer", json={"query": "q"})
     assert response.status_code == 401
-    client.close()
 
 
 class FakeResponse:
