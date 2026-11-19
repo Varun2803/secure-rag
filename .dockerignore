@@ -10,7 +10,10 @@ env
 **/.venv
 **/venv
 **/env
+node_modules
+**/node_modules
 dist
+frontend/dist
 build
 .mypy_cache
 .ruff_cache

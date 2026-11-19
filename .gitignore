@@ -4,6 +4,10 @@
 .venv/
 venv/
 env/
+node_modules/
+**/node_modules/
+coverage/
+*.tsbuildinfo
 __pycache__/
 *.py[cod]
 .pytest_cache/
