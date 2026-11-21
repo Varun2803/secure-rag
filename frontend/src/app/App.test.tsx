@@ -141,7 +141,7 @@ describe('authentication routes and screens', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('registers the document route and handles navigation when no tenant is active', async () => {
+  it('registers document and knowledge routes and handles navigation when no tenant is active', async () => {
     const fetchMock = successfulLoginFetch()
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
@@ -152,9 +152,13 @@ describe('authentication routes and screens', () => {
     await screen.findByRole('heading', { name: 'Tenant workspace' })
 
     const mobileNavigation = screen.getByRole('navigation', { name: 'Mobile workspace navigation' })
+    expect(screen.getAllByRole('link', { name: 'Knowledge Search' })).toHaveLength(2)
     await user.click(within(mobileNavigation).getByRole('link', { name: 'Documents' }))
     expect(await screen.findByRole('heading', { name: 'Documents' })).toBeInTheDocument()
     expect(screen.getByText('Select an active tenant workspace to view its documents.')).toBeInTheDocument()
+    await user.click(within(mobileNavigation).getByRole('link', { name: 'Knowledge Search' }))
+    expect(await screen.findByRole('heading', { name: 'Knowledge Search' })).toBeInTheDocument()
+    expect(screen.getByText('Select an active tenant workspace to search its authorized documents.')).toBeInTheDocument()
   })
 
   it('redirects authenticated visitors away from login and registration', async () => {
