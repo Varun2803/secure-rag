@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -139,6 +139,22 @@ describe('authentication routes and screens', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in to SecureRAG' })).toBeInTheDocument()
     expect(await screen.findByText('You signed out on this device. The issued access token remains valid until its expiry.')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('registers the document route and handles navigation when no tenant is active', async () => {
+    const fetchMock = successfulLoginFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(screen.getByLabelText('Email'), 'user@example.test')
+    await user.type(screen.getByLabelText('Password'), 'SecurePassword123!')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await screen.findByRole('heading', { name: 'Tenant workspace' })
+
+    const mobileNavigation = screen.getByRole('navigation', { name: 'Mobile workspace navigation' })
+    await user.click(within(mobileNavigation).getByRole('link', { name: 'Documents' }))
+    expect(await screen.findByRole('heading', { name: 'Documents' })).toBeInTheDocument()
+    expect(screen.getByText('Select an active tenant workspace to view its documents.')).toBeInTheDocument()
   })
 
   it('redirects authenticated visitors away from login and registration', async () => {

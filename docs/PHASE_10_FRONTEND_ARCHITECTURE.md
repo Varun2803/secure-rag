@@ -1,6 +1,6 @@
 # SecureRAG Phase 10 — Frontend Architecture Proposal
 
-**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review; 10.4 tenant and membership workspace implemented and awaiting independent review. 10.5 and later subphases have not started.
+**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review; 10.4 tenant and membership workspace approved; 10.5 document management implemented and awaiting independent review. 10.6 and later subphases have not started.
 
 ## 1. Technology stack
 
@@ -173,7 +173,11 @@ Build responsive navigation that collapses to a drawer on narrow screens. Use ex
 7. **10.7 — Retrieval and Grounded Answers:** Semantic search and generated answers/citations using only existing backend endpoints.
 8. **10.8 — Security Hardening and Release Review:** Accessibility, responsive polish, CSP/reverse-proxy deployment notes, security tests, dependency review, and end-to-end workflow verification.
 
-10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review. 10.4 tenant and membership workspace is implemented and awaiting independent review; 10.5 and later subphases have not started.
+10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review. 10.4 tenant and membership workspace is approved. 10.5 document management is implemented and awaiting independent review; 10.6 and later subphases have not started.
+
+### Phase 10.5 implementation notes
+
+The document workspace uses the existing tenant-scoped list, detail, status, and synchronous PDF upload endpoints. Uploads omit optional ACL fields and therefore retain the backend defaults: private with empty role and user grants. The UI explicitly explains that the uploader receives no implicit content access; permission editing remains in Phase 10.6. Processing status is persisted and refreshed manually; the UI does not simulate background progress. Lists and detail panels render an explicit metadata projection and omit storage filenames, hashes, and raw ACL identifiers. No preview, download, delete, or sharing controls are provided.
 
 ## 12. Backend additions required and known gaps
 
@@ -198,9 +202,9 @@ The current [SECURITY_ASSESSMENT.md](../SECURITY_ASSESSMENT.md) reports reviewed
 
 **Not tested / residual limits:** live PostgreSQL and Qdrant integration testing was not completed in the documented assessment. Audit append-only protections do not prevent a privileged database owner/superuser from tampering with records. No production deployment verification is documented. Therefore this proposal and the assessment do not claim production readiness or penetration-test certification.
 
-## 14. Proposed local run commands (for the later implementation)
+## 14. Local run commands
 
-From repository root in PowerShell, with the 10.2 foundation and current 10.3 authentication implementation:
+From repository root in PowerShell, for the current frontend implementation:
 
 ```powershell
 cd frontend
@@ -208,4 +212,4 @@ npm install
 npm run dev
 ```
 
-Vite should proxy `/api` to the local FastAPI origin (typically `http://127.0.0.1:8000`) via `vite.config.ts`; browser code should call relative `/api/v1/...` paths. Production should route the same path through the trusted same-origin reverse proxy. No frontend directory or package files are created as part of this proposal.
+Vite proxies `/api` to the local FastAPI origin (by default `http://127.0.0.1:8000`, configurable with `SECURERAG_API_TARGET`); browser code uses relative `/api/v1/...` paths. Production should route the same path through the trusted same-origin reverse proxy.

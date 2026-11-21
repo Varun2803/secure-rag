@@ -9,6 +9,7 @@ import { RegisterPage } from '@/features/auth/register-page'
 import { ActiveTenantProvider } from '@/features/tenants/active-tenant-provider'
 import { TenantWorkspacePage } from '@/features/tenants/tenant-workspace-page'
 import { MembershipsPage } from '@/features/memberships/memberships-page'
+import { DocumentsPage } from '@/features/documents/documents-page'
 import { useAuth } from '@/features/auth/auth-context'
 
 function TenantSessionBoundary({ children }: PropsWithChildren) {
@@ -30,6 +31,7 @@ export function App() {
               <Route element={<AppShell />}>
                 <Route index element={<TenantWorkspacePage />} />
                 <Route path="memberships" element={<MembershipsPage />} />
+                <Route path="documents" element={<DocumentsPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Route>

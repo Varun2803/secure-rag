@@ -32,6 +32,7 @@ export function AppShell() {
             <p className="mb-0 mt-3 text-sm leading-6 text-muted-foreground">
               <Link className="font-medium text-primary hover:underline" to="/">Tenant workspace</Link>
             </p>
+            <Link className="mt-3 block text-sm font-medium text-primary hover:underline" to="/documents">Documents</Link>
             {activeTenant && ['OWNER', 'ADMIN'].includes(activeTenant.role) && <Link className="mt-3 block text-sm font-medium text-primary hover:underline" to="/memberships">Manage memberships</Link>}
           </div>
 
@@ -63,8 +64,9 @@ export function AppShell() {
               <ThemeToggle />
             </div>
           </header>
-          <nav aria-label="Mobile workspace navigation" className="flex items-center gap-4 border-b border-border bg-card/40 px-4 py-3 text-sm lg:hidden">
+          <nav aria-label="Mobile workspace navigation" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card/40 px-4 py-3 text-sm lg:hidden">
             <Link className="font-medium text-primary hover:underline" to="/">Tenant workspace</Link>
+            <Link className="font-medium text-primary hover:underline" to="/documents">Documents</Link>
             {activeTenant && ['OWNER', 'ADMIN'].includes(activeTenant.role) && <Link className="font-medium text-primary hover:underline" to="/memberships">Manage memberships</Link>}
           </nav>
           <main aria-busy={isSwitchingTenant} className="flex-1 px-4 py-8 sm:px-8 sm:py-10">
