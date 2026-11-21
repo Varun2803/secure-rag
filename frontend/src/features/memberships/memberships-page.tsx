@@ -83,7 +83,15 @@ function MembershipRow({ membership, tenantId, actorId, actorRole, onUpdated }: 
 
   function submit() {
     if (selfDeactivation) return
-    if (membership.is_active && !isActive && !window.confirm(`Deactivate ${membership.user.full_name}'s tenant membership?`)) return
+    const changes: string[] = []
+    if (role !== membership.role) {
+      const privilegeNote = ['OWNER', 'ADMIN'].includes(role) ? ' This grants elevated tenant privileges.' : ''
+      changes.push(`change the role to ${role}.${privilegeNote}`)
+    }
+    if (isActive !== membership.is_active) {
+      changes.push(isActive ? 'activate the tenant membership.' : 'deactivate the tenant membership.')
+    }
+    if (changes.length > 0 && !window.confirm(`Confirm changes for ${membership.user.full_name}: ${changes.join(' ')}`)) return
     update.mutate()
   }
 

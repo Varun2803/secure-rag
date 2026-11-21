@@ -63,6 +63,10 @@ export function AppShell() {
               <ThemeToggle />
             </div>
           </header>
+          <nav aria-label="Mobile workspace navigation" className="flex items-center gap-4 border-b border-border bg-card/40 px-4 py-3 text-sm lg:hidden">
+            <Link className="font-medium text-primary hover:underline" to="/">Tenant workspace</Link>
+            {activeTenant && ['OWNER', 'ADMIN'].includes(activeTenant.role) && <Link className="font-medium text-primary hover:underline" to="/memberships">Manage memberships</Link>}
+          </nav>
           <main aria-busy={isSwitchingTenant} className="flex-1 px-4 py-8 sm:px-8 sm:py-10">
             <div className="mx-auto w-full max-w-6xl">
               {isSwitchingTenant ? <GlobalLoading label="Clearing previous tenant data" /> : <Outlet />}
