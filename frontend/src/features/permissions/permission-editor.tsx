@@ -47,6 +47,7 @@ export function PermissionEditor({ tenantId, documentId, tenantRole }: { tenantI
   const queryClient = useQueryClient()
   const [confirmationOpen, setConfirmationOpen] = useState(false)
   const [pendingValues, setPendingValues] = useState<FormFields | null>(null)
+  const [reconciliation, setReconciliation] = useState<'idle' | 'loading' | 'reloaded' | 'failed'>('idle')
   const allowed = isTenantPermissionManager(tenantRole)
   const permissionKey = tenantQueryKey(tenantId, 'documents', 'permissions', documentId)
   const permissionQuery = useQuery({
@@ -60,6 +61,23 @@ export function PermissionEditor({ tenantId, documentId, tenantRole }: { tenantI
     enabled: allowed,
   })
   const form = useForm<FormFields>({ resolver: zodResolver(permissionReplacementSchema), defaultValues: { classification: 'INTERNAL', is_public: false, allowed_roles: [], allowed_users: [] } })
+
+  async function reloadAuthoritativePermissions() {
+    setReconciliation('loading')
+    try {
+      const result = await permissionQuery.refetch()
+      if (result.isError || !result.data) {
+        setReconciliation('failed')
+        return
+      }
+      form.reset(toFormValues(result.data))
+      setPendingValues(null)
+      setReconciliation('reloaded')
+    } catch {
+      setReconciliation('failed')
+    }
+  }
+
   useEffect(() => {
     if (permissionQuery.data) {
       const values = toFormValues(permissionQuery.data)
@@ -75,16 +93,21 @@ export function PermissionEditor({ tenantId, documentId, tenantRole }: { tenantI
       form.reset(values)
       setConfirmationOpen(false)
       setPendingValues(null)
+      setReconciliation('idle')
     },
-    onError: () => {
+    onError: (error) => {
       setConfirmationOpen(false)
-      setPendingValues(null)
+      if (error instanceof ApiError && error.status === 503) {
+        void reloadAuthoritativePermissions()
+      } else {
+        setPendingValues(null)
+      }
     },
   })
 
   if (!allowed) return null
-  if (permissionQuery.isLoading) return <Card><CardContent className="pt-6"><GlobalLoading label="Loading document permissions" /></CardContent></Card>
-  if (permissionQuery.isError || !permissionQuery.data) return <Card><CardContent className="pt-6"><ErrorState title="Permissions unavailable" message={safePermissionError(permissionQuery.error)} /><Button className="mt-3" variant="outline" onClick={() => void permissionQuery.refetch()}>Retry</Button></CardContent></Card>
+  if (permissionQuery.isLoading && !permissionQuery.data) return <Card><CardContent className="pt-6"><GlobalLoading label="Loading document permissions" /></CardContent></Card>
+  if (!permissionQuery.data) return <Card><CardContent className="pt-6"><ErrorState title="Permissions unavailable" message={safePermissionError(permissionQuery.error)} /><Button className="mt-3" variant="outline" onClick={() => void permissionQuery.refetch()}>Retry</Button></CardContent></Card>
 
   const current = permissionQuery.data
   const currentFormValues = form.getValues()
@@ -109,8 +132,11 @@ export function PermissionEditor({ tenantId, documentId, tenantRole }: { tenantI
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">Vector synchronization:</span><Badge variant={sync.variant}>{sync.label}</Badge></div>
         <p role="status" className="text-sm text-muted-foreground">{sync.message}</p>
-        {save.isError && <p role="alert" className="text-sm text-destructive">{safePermissionError(save.error, true)}</p>}
+        {save.isError && !(save.error instanceof ApiError && save.error.status === 503) && <p role="alert" className="text-sm text-destructive">{safePermissionError(save.error, true)}</p>}
         {save.isSuccess && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">The complete ACL was saved. The values below reflect the backend response.</p>}
+        {reconciliation === 'loading' && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">The save outcome was not confirmed. Reloading the current permissions from the backend…</p>}
+        {reconciliation === 'reloaded' && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">The save outcome was not confirmed. Current permissions have been reloaded from the backend; the values below reflect its latest response.</p>}
+        {reconciliation === 'failed' && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"><p>The save outcome was not confirmed, and permissions could not be reloaded. Your edits remain in the form. Reload current permissions before submitting another change.</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void reloadAuthoritativePermissions()}>Reload current permissions</Button></div>}
         {membershipsQuery.isError && <p role="alert" className="text-sm text-destructive">Tenant members could not be loaded. User grants cannot be edited until the member list is available.</p>}
         <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
           Public access is scoped to this tenant. A private ACL with no role or user grants denies content access. Classification is a label only. Uploader, OWNER, and ADMIN status do not grant document-content access automatically.
@@ -118,20 +144,20 @@ export function PermissionEditor({ tenantId, documentId, tenantRole }: { tenantI
         <form className="space-y-5" noValidate onSubmit={form.handleSubmit(requestConfirmation)}>
           <div>
             <label htmlFor={`permission-classification-${documentId}`} className="mb-1.5 block text-sm font-medium">Classification</label>
-            <select id={`permission-classification-${documentId}`} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" {...form.register('classification')}>
+            <select id={`permission-classification-${documentId}`} disabled={reconciliation === 'loading' || reconciliation === 'failed'} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" {...form.register('classification')}>
               {classifications.map((classification) => <option key={classification} value={classification}>{classification}</option>)}
             </select>
             {form.formState.errors.classification && <p className="mt-1 text-xs text-destructive">{form.formState.errors.classification.message}</p>}
           </div>
           <fieldset className="space-y-2">
             <legend className="mb-2 text-sm font-medium">Visibility</legend>
-            <label className="flex items-start gap-2 text-sm"><input name={`permission-visibility-${documentId}`} type="radio" value="public" checked={currentFormValues.is_public} onChange={() => form.setValue('is_public', true, { shouldDirty: true })} /><span><span className="font-medium">Public within this tenant</span><span className="block text-xs text-muted-foreground">Tenant members may access the document when backend status and tenant checks pass.</span></span></label>
-            <label className="flex items-start gap-2 text-sm"><input name={`permission-visibility-${documentId}`} type="radio" value="private" checked={!currentFormValues.is_public} onChange={() => form.setValue('is_public', false, { shouldDirty: true })} /><span><span className="font-medium">Private</span><span className="block text-xs text-muted-foreground">Only explicitly granted roles or users can access document content.</span></span></label>
+            <label className="flex items-start gap-2 text-sm"><input disabled={reconciliation === 'loading' || reconciliation === 'failed'} name={`permission-visibility-${documentId}`} type="radio" value="public" checked={currentFormValues.is_public} onChange={() => form.setValue('is_public', true, { shouldDirty: true })} /><span><span className="font-medium">Public within this tenant</span><span className="block text-xs text-muted-foreground">Tenant members may access the document when backend status and tenant checks pass.</span></span></label>
+            <label className="flex items-start gap-2 text-sm"><input disabled={reconciliation === 'loading' || reconciliation === 'failed'} name={`permission-visibility-${documentId}`} type="radio" value="private" checked={!currentFormValues.is_public} onChange={() => form.setValue('is_public', false, { shouldDirty: true })} /><span><span className="font-medium">Private</span><span className="block text-xs text-muted-foreground">Only explicitly granted roles or users can access document content.</span></span></label>
           </fieldset>
           <fieldset>
             <legend className="mb-2 text-sm font-medium">Allowed tenant roles</legend>
             <div className="grid gap-2 sm:grid-cols-2">
-              {roles.map((role) => <label key={role} className="flex items-center gap-2 text-sm"><input type="checkbox" value={role} checked={currentFormValues.allowed_roles.includes(role)} onChange={(event) => {
+              {roles.map((role) => <label key={role} className="flex items-center gap-2 text-sm"><input disabled={reconciliation === 'loading' || reconciliation === 'failed'} type="checkbox" value={role} checked={currentFormValues.allowed_roles.includes(role)} onChange={(event) => {
                 const selected = event.target.checked ? [...currentFormValues.allowed_roles, role] : currentFormValues.allowed_roles.filter((item) => item !== role)
                 form.setValue('allowed_roles', selected, { shouldDirty: true, shouldValidate: true })
               }} />{role}</label>)}
@@ -143,21 +169,21 @@ export function PermissionEditor({ tenantId, documentId, tenantRole }: { tenantI
             {membershipsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading active tenant members…</p>}
             {membershipsQuery.data && activeUsers.length === 0 && <p className="text-sm text-muted-foreground">No active tenant members are available to select.</p>}
             <div className="grid max-h-48 gap-2 overflow-y-auto rounded-md border border-border p-3 sm:grid-cols-2">
-              {activeUsers.map((membership) => <label key={membership.user_id} className="flex min-w-0 items-start gap-2 text-sm"><input type="checkbox" value={membership.user_id} checked={currentFormValues.allowed_users.includes(membership.user_id)} disabled={membershipsQuery.isLoading || membershipsQuery.isError} onChange={(event) => {
+              {activeUsers.map((membership) => <label key={membership.user_id} className="flex min-w-0 items-start gap-2 text-sm"><input type="checkbox" value={membership.user_id} checked={currentFormValues.allowed_users.includes(membership.user_id)} disabled={membershipsQuery.isLoading || membershipsQuery.isError || reconciliation === 'loading' || reconciliation === 'failed'} onChange={(event) => {
                 const selected = event.target.checked ? [...currentFormValues.allowed_users, membership.user_id] : currentFormValues.allowed_users.filter((item) => item !== membership.user_id)
                 form.setValue('allowed_users', selected, { shouldDirty: true, shouldValidate: true })
               }} /><span className="min-w-0"><span className="block truncate">{membership.user.full_name}</span><span className="block truncate text-xs text-muted-foreground">{membership.user.email}</span></span></label>)}
             </div>
             {form.formState.errors.allowed_users && <p className="mt-1 text-xs text-destructive">{form.formState.errors.allowed_users.message}</p>}
           </fieldset>
-          <Button type="submit" disabled={save.isPending || membershipsQuery.isLoading || membershipsQuery.isError || !form.formState.isDirty}>{save.isPending ? 'Saving permissions…' : 'Review complete ACL'}</Button>
+          <Button type="submit" disabled={save.isPending || membershipsQuery.isLoading || membershipsQuery.isError || reconciliation === 'loading' || reconciliation === 'failed' || !form.formState.isDirty}>{save.isPending ? 'Saving permissions…' : 'Review complete ACL'}</Button>
         </form>
       </CardContent>
     </Card>
     <Dialog open={confirmationOpen} onOpenChange={(open) => { if (!save.isPending) setConfirmationOpen(open) }}>
-      <DialogContent aria-describedby={`permission-confirmation-description-${documentId}`}>
+      <DialogContent>
         <DialogTitle>Replace document permissions?</DialogTitle>
-        <DialogDescription id={`permission-confirmation-description-${documentId}`}>
+        <DialogDescription>
           This replaces the entire current ACL. The document will be {pendingValues?.is_public ? 'public within this tenant' : 'private'}, classified as {pendingValues?.classification}, with {pendingValues?.allowed_roles.length ?? 0} role grants and {pendingValues?.allowed_users.length ?? 0} user grants. Only the backend can authorize access; your administrator role does not grant document-content access.
         </DialogDescription>
         <div className="flex justify-end gap-2"><Button variant="outline" disabled={save.isPending} onClick={() => { setConfirmationOpen(false); setPendingValues(null) }}>Cancel</Button><Button disabled={save.isPending} onClick={confirmReplacement}>{save.isPending ? 'Saving…' : 'Confirm replacement'}</Button></div>

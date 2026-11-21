@@ -102,4 +102,64 @@ describe('permission editor', () => {
     expect(alert).toHaveTextContent('selected roles or users are invalid')
     expect(alert).not.toHaveTextContent('sensitive service message')
   })
+
+  it('reconciles an ambiguous PUT 503 without retrying the PUT and shows the authoritative ACL', async () => {
+    let permissionGets = 0
+    let permissionPuts = 0
+    const reconciled = { ...existing, classification: 'RESTRICTED', allowed_roles: ['MANAGER'], allowed_users: [], synchronization_status: 'PROCESSING' }
+    const request = vi.fn(async (path: string, options?: { method?: string }) => {
+      if (path.endsWith('/permissions') && !options?.method) return ++permissionGets === 1 ? existing : reconciled
+      if (path.endsWith('/memberships')) return memberships
+      if (options?.method === 'PUT') { permissionPuts += 1; throw new ApiError('sensitive sync persistence detail', 'http', 503) }
+      throw new Error(`Unexpected endpoint ${path}`)
+    }) as unknown as AuthContextValue['authenticatedRequest'] & ReturnType<typeof vi.fn>
+    renderEditor('ADMIN', request)
+    await screen.findByRole('region', { name: `Permissions for document ${documentId}` })
+    await userEvent.selectOptions(screen.getByLabelText('Classification'), 'INTERNAL')
+    await userEvent.click(screen.getByRole('button', { name: 'Review complete ACL' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm replacement' }))
+
+    expect(await screen.findByText(/save outcome was not confirmed/i)).toBeInTheDocument()
+    expect(await screen.findByText('Synchronization processing')).toBeInTheDocument()
+    expect(screen.getByLabelText('Classification')).toHaveValue('RESTRICTED')
+    expect(screen.getByLabelText('MANAGER', { selector: 'input' })).toBeChecked()
+    expect(screen.queryByText(/permission change could not be saved/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('sensitive sync persistence detail')).not.toBeInTheDocument()
+    expect(permissionGets).toBe(2)
+    expect(permissionPuts).toBe(1)
+  })
+
+  it('retains edits after reconciliation GET failure and allows manual reload without retrying PUT', async () => {
+    let permissionGets = 0
+    let permissionPuts = 0
+    const latest = { ...existing, classification: 'RESTRICTED', allowed_roles: [], allowed_users: [], synchronization_status: 'COMPLETED' }
+    const request = vi.fn(async (path: string, options?: { method?: string }) => {
+      if (path.endsWith('/permissions') && !options?.method) {
+        permissionGets += 1
+        if (permissionGets === 1) return existing
+        if (permissionGets === 2) throw new ApiError('sensitive reload detail', 'http', 503)
+        return latest
+      }
+      if (path.endsWith('/memberships')) return memberships
+      if (options?.method === 'PUT') { permissionPuts += 1; throw new ApiError('sensitive update detail', 'http', 503) }
+      throw new Error(`Unexpected endpoint ${path}`)
+    }) as unknown as AuthContextValue['authenticatedRequest'] & ReturnType<typeof vi.fn>
+    renderEditor('OWNER', request)
+    await screen.findByRole('region', { name: `Permissions for document ${documentId}` })
+    await userEvent.selectOptions(screen.getByLabelText('Classification'), 'INTERNAL')
+    await userEvent.click(screen.getByRole('button', { name: 'Review complete ACL' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm replacement' }))
+
+    expect(await screen.findByRole('button', { name: 'Reload current permissions' })).toBeInTheDocument()
+    expect(screen.getByText(/Your edits remain in the form/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Classification')).toHaveValue('INTERNAL')
+    expect(permissionPuts).toBe(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reload current permissions' }))
+    expect(await screen.findByText(/current permissions have been reloaded/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Classification')).toHaveValue('RESTRICTED')
+    expect(screen.getByText('Synchronized')).toBeInTheDocument()
+    expect(permissionGets).toBe(3)
+    expect(permissionPuts).toBe(1)
+  })
 })
