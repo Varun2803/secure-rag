@@ -1,6 +1,6 @@
 # SecureRAG Phase 10 — Frontend Architecture Proposal
 
-**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review. Later subphases have not started.
+**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review; 10.4 tenant and membership workspace implemented and awaiting independent review. 10.5 and later subphases have not started.
 
 ## 1. Technology stack
 
@@ -173,7 +173,7 @@ Build responsive navigation that collapses to a drawer on narrow screens. Use ex
 7. **10.7 — Retrieval and Grounded Answers:** Semantic search and generated answers/citations using only existing backend endpoints.
 8. **10.8 — Security Hardening and Release Review:** Accessibility, responsive polish, CSP/reverse-proxy deployment notes, security tests, dependency review, and end-to-end workflow verification.
 
-10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review; 10.4 and later subphases have not started.
+10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review. 10.4 tenant and membership workspace is implemented and awaiting independent review; 10.5 and later subphases have not started.
 
 ## 12. Backend additions required and known gaps
 

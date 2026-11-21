@@ -23,6 +23,7 @@ function successfulLoginFetch() {
   return vi.fn()
     .mockResolvedValueOnce(new Response(JSON.stringify(tokenResponse), { status: 200 }))
     .mockResolvedValueOnce(new Response(JSON.stringify(userResponse), { status: 200 }))
+    .mockResolvedValueOnce(new Response('[]', { status: 200 }))
 }
 
 beforeEach(() => {
@@ -37,7 +38,7 @@ describe('authentication routes and screens', () => {
     renderApp()
 
     expect(await screen.findByRole('heading', { name: 'Sign in to SecureRAG' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'A secure workspace, ready to grow.' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Tenant workspace' })).not.toBeInTheDocument()
   })
 
   it('switches the accessible theme control between light and dark modes on auth routes', async () => {
@@ -128,15 +129,16 @@ describe('authentication routes and screens', () => {
     await user.type(screen.getByLabelText('Password'), 'SecurePassword123!')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(await screen.findByRole('heading', { name: 'A secure workspace, ready to grow.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tenant workspace' })).toBeInTheDocument()
+    expect(await screen.findByText('You do not belong to an active tenant yet. Create one below or ask an existing tenant OWNER to add your account.')).toBeInTheDocument()
     expect(screen.getByText('Example User')).toBeInTheDocument()
     expect(screen.queryByText(/superuser/i)).not.toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     await user.click(screen.getByRole('button', { name: 'Sign out' }))
 
     expect(await screen.findByRole('heading', { name: 'Sign in to SecureRAG' })).toBeInTheDocument()
     expect(await screen.findByText('You signed out on this device. The issued access token remains valid until its expiry.')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it('redirects authenticated visitors away from login and registration', async () => {
@@ -147,14 +149,14 @@ describe('authentication routes and screens', () => {
     await user.type(screen.getByLabelText('Email'), 'user@example.test')
     await user.type(screen.getByLabelText('Password'), 'SecurePassword123!')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
-    await screen.findByRole('heading', { name: 'A secure workspace, ready to grow.' })
+    await screen.findByRole('heading', { name: 'Tenant workspace' })
 
     for (const publicPath of ['/login', '/register']) {
       await act(async () => {
         window.history.pushState({}, '', publicPath)
         window.dispatchEvent(new PopStateEvent('popstate'))
       })
-      expect(await screen.findByRole('heading', { name: 'A secure workspace, ready to grow.' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Tenant workspace' })).toBeInTheDocument()
       expect(window.location.pathname).toBe('/')
     }
   })
@@ -165,6 +167,7 @@ describe('authentication routes and screens', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(tokenResponse), { status: 200 }))
       .mockReturnValueOnce(profilePromise)
+      .mockResolvedValueOnce(new Response('[]', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     renderApp()
@@ -173,10 +176,10 @@ describe('authentication routes and screens', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('Completing sign-in')
-    expect(screen.queryByRole('heading', { name: 'A secure workspace, ready to grow.' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Tenant workspace' })).not.toBeInTheDocument()
 
     releaseProfile(new Response(JSON.stringify(userResponse), { status: 200 }))
-    expect(await screen.findByRole('heading', { name: 'A secure workspace, ready to grow.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tenant workspace' })).toBeInTheDocument()
   })
 
 })

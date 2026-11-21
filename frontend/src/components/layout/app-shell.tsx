@@ -1,11 +1,14 @@
 import { Layers3, LogOut, ShieldCheck } from 'lucide-react'
-import { Outlet } from 'react-router-dom'
+import { Link, Outlet } from 'react-router-dom'
 import { ThemeToggle } from '@/app/providers/theme-provider'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/auth-context'
+import { useActiveTenant } from '@/features/tenants/active-tenant-context'
+import { GlobalLoading } from '@/components/shared/global-loading'
 
 export function AppShell() {
   const { user, logout } = useAuth()
+  const { tenants, activeTenant, isTenantsLoading, isSwitchingTenant, selectTenant } = useActiveTenant()
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -27,8 +30,9 @@ export function AppShell() {
               Workspace
             </div>
             <p className="mb-0 mt-3 text-sm leading-6 text-muted-foreground">
-              Workspace modules will appear here when they are implemented.
+              <Link className="font-medium text-primary hover:underline" to="/">Tenant workspace</Link>
             </p>
+            {activeTenant && ['OWNER', 'ADMIN'].includes(activeTenant.role) && <Link className="mt-3 block text-sm font-medium text-primary hover:underline" to="/memberships">Manage memberships</Link>}
           </div>
 
           <div className="mt-auto border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
@@ -46,9 +50,11 @@ export function AppShell() {
             </div>
             <p className="hidden text-sm text-muted-foreground lg:block">Enterprise knowledge security</p>
             <div className="ml-auto flex items-center gap-3">
-              <span className="hidden rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
-                Workspace
-              </span>
+              <label className="sr-only" htmlFor="active-tenant-selector">Active tenant</label>
+              <select id="active-tenant-selector" aria-label="Active tenant" value={activeTenant?.tenant.id ?? ''} disabled={isTenantsLoading || isSwitchingTenant || tenants.length === 0} onChange={(event) => { if (event.target.value) void selectTenant(event.target.value) }} className="h-9 max-w-48 rounded-md border border-input bg-background px-2 text-xs sm:max-w-64 sm:text-sm">
+                <option value="">{isTenantsLoading ? 'Loading tenants…' : isSwitchingTenant ? 'Switching…' : tenants.length ? 'Select tenant' : 'No tenants'}</option>
+                {tenants.map((item) => <option key={item.tenant.id} value={item.tenant.id}>{item.tenant.name} · {item.role}</option>)}
+              </select>
               <span className="hidden max-w-40 truncate text-sm font-medium sm:block" title={user?.full_name}>{user?.full_name}</span>
               <Button aria-label="Sign out" onClick={logout} size="sm" variant="outline">
                 <LogOut aria-hidden="true" className="size-4" />
@@ -57,9 +63,9 @@ export function AppShell() {
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 px-4 py-8 sm:px-8 sm:py-10">
+          <main aria-busy={isSwitchingTenant} className="flex-1 px-4 py-8 sm:px-8 sm:py-10">
             <div className="mx-auto w-full max-w-6xl">
-              <Outlet />
+              {isSwitchingTenant ? <GlobalLoading label="Clearing previous tenant data" /> : <Outlet />}
             </div>
           </main>
           <footer className="border-t border-border px-5 py-4 text-center text-xs text-muted-foreground sm:px-8">
