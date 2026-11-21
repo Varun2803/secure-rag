@@ -178,7 +178,7 @@ def create_app() -> FastAPI:
             logger.info("Stopped %s", settings.app_name)
 
     production = settings.app_env.strip().casefold() in {"production", "prod"}
-    documentation_path = None if production else f"{settings.api_v1_prefix}/openapi.json"
+    documentation_path = None if production else "/openapi.json"
     application = FastAPI(
         title=settings.app_name,
         version="1.0.0",
