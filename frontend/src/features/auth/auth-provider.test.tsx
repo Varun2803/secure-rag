@@ -114,6 +114,61 @@ describe('authentication state', () => {
     expect(sessionStorage.length).toBe(0)
   })
 
+  it('measures token expiry from the login response while profile verification is delayed', async () => {
+    vi.useFakeTimers()
+    let loginResponseAt = 0
+    let releaseProfile!: (response: Response) => void
+    const profilePromise = new Promise<Response>((resolve) => { releaseProfile = resolve })
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/login')) {
+        loginResponseAt = Date.now()
+        return Promise.resolve(new Response(JSON.stringify({ ...tokenResponse, expires_in: 10 }), { status: 200 }))
+      }
+      return profilePromise
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHarness()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Login test user' }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('authenticating')
+    expect(loginResponseAt).toBeGreaterThan(0)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    releaseProfile(new Response(JSON.stringify(userResponse), { status: 200 }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('authenticated')
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3999) })
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('authenticated')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('expired')
+  })
+
+  it('does not establish a session when the token expires during profile verification', async () => {
+    vi.useFakeTimers()
+    let releaseProfile!: (response: Response) => void
+    const profilePromise = new Promise<Response>((resolve) => { releaseProfile = resolve })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...tokenResponse, expires_in: 5 }), { status: 200 }))
+      .mockReturnValueOnce(profilePromise)
+    vi.stubGlobal('fetch', fetchMock)
+    const { queryClient } = renderHarness()
+    queryClient.setQueryData(['private-data'], 'cached value')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Login test user' }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('authenticating')
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    releaseProfile(new Response(JSON.stringify(userResponse), { status: 200 }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('expired')
+    expect(screen.getByTestId('profile')).toHaveTextContent('no profile')
+    expect(queryClient.getQueryData(['private-data'])).toBeUndefined()
+  })
+
   it('clears the token, user, and query cache on local logout', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(tokenResponse), { status: 200 }))

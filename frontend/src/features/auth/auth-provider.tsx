@@ -65,11 +65,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
     let stage: 'credentials' | 'profile' = 'credentials'
     try {
       const tokenResponse = await loginUser(email, password)
+      const expiresAt = Date.now() + tokenResponse.expires_in * 1000
       if (attempt !== attemptRef.current) return false
       tokenRef.current = tokenResponse.access_token
       stage = 'profile'
       const user = await fetchCurrentUser(tokenResponse.access_token)
       if (attempt !== attemptRef.current || tokenRef.current !== tokenResponse.access_token) return false
+      if (Date.now() >= expiresAt) {
+        tokenRef.current = null
+        queryClient.clear()
+        setState({ status: 'expired', user: null, error: null, notice: null, expiresAt: null })
+        navigate('/login', { replace: true, state: { reason: 'expired' } })
+        return false
+      }
       if (!user.is_active) throw new Error('Inactive profile response')
 
       setState({
@@ -77,7 +85,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         user,
         error: null,
         notice: null,
-        expiresAt: Date.now() + tokenResponse.expires_in * 1000,
+        expiresAt,
       })
       navigate(internalPathFrom(returnTo ? { from: returnTo } : location.state) ?? '/', { replace: true })
       return true
