@@ -363,7 +363,12 @@ def test_provider_missing_key_is_unavailable():
 
 
 def test_https_remote_endpoint_is_accepted():
-    settings = Settings(llm_base_url="https://llm.example.com/v1", app_env="production")
+    settings = Settings(
+        llm_base_url="https://llm.example.com/v1", app_env="production",
+        secret_key="0123456789abcdef0123456789abcdef", trusted_hosts="api.example.com",
+        database_url="postgresql+psycopg://user:password@db.example.com/securerag",
+        qdrant_url="https://qdrant.example.com", qdrant_api_key="qdrant-test-api-key",
+    )
     assert settings.llm_base_url == "https://llm.example.com/v1"
 
 
@@ -377,7 +382,12 @@ def test_remote_or_private_network_http_endpoint_is_rejected(url):
 def test_loopback_http_is_accepted_only_for_development(url):
     assert Settings(llm_base_url=url, app_env="development").llm_base_url == url
     with pytest.raises(ValueError):
-        Settings(llm_base_url=url, app_env="production")
+        Settings(
+            llm_base_url=url, app_env="production",
+            secret_key="0123456789abcdef0123456789abcdef", trusted_hosts="api.example.com",
+            database_url="postgresql+psycopg://user:password@db.example.com/securerag",
+            qdrant_url="https://qdrant.example.com", qdrant_api_key="qdrant-test-api-key",
+        )
 
 
 @pytest.mark.parametrize("url", ["not-a-url", "ftp://llm.example.com", "https:///missing-host", "https://host:bad/v1",

@@ -10,6 +10,7 @@ from app.users import models as _user_models  # noqa: F401
 from app.documents import models as _document_models  # noqa: F401
 from app.audit import models as _audit_models  # noqa: F401
 from app.permissions import models as _permission_models  # noqa: F401
+from app.auth import rate_limit as _auth_rate_limit_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

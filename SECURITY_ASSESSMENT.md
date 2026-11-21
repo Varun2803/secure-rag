@@ -1,5 +1,42 @@
 # SecureRAG Phase 9 Security Assessment
 
+## Phase 10.8 — Security hardening and release review (current)
+
+Assessment date: 2026-11-21. This section supersedes Phase 9 conclusions where it describes newer code or verification. This remains a source-code review and automated test assessment, not a penetration-test certification or production validation.
+
+### Findings register and disposition
+
+| ID | Severity | Finding and evidence | Exploit / operational impact | Disposition |
+|---|---|---|---|---|
+| SEC10-01 | High | Production settings previously did not validate `SECRET_KEY`; strength was checked later only when JWT encode/decode ran (`backend/app/config.py`, `backend/app/auth/security.py`). | A production service could initialize with missing or placeholder JWT signing material and fail at authentication time. | Fixed: production startup rejects missing, short, low-diversity, or known-placeholder keys, and rejects `DEBUG=true`. Operators must still generate an independent CSPRNG secret. |
+| SEC10-02 | Medium | Login and registration routes previously had no shared throttle (`backend/app/auth/routes.py`). | Password guessing and registration attempts could consume password-hash and database resources. | Fixed: atomic PostgreSQL fixed-window counters; 10 login attempts/client/60 seconds and 5 registrations/client/hour; stale-row cleanup and a 100,000-row capacity ceiling; limiter storage failures fail closed with 503. Regression tests cover throttling, window reset, proxy-header trust, capacity and API responses. |
+| SEC10-03 | Medium | No host validation or explicit proxy trust policy existed (`backend/app/main.py`). | A deployment with unsafe proxy/Host handling could be exposed to host-header confusion; impact depended on ingress topology. | Fixed for host validation: production requires exact `TRUSTED_HOSTS` and installs `TrustedHostMiddleware`; production disables OpenAPI, Swagger and ReDoc. Forwarded client IP is ignored unless the direct peer matches explicit `TRUSTED_PROXY_CIDRS`; proxy header normalization remains an operational requirement. |
+| SEC10-04 | High | Production accepted empty Qdrant API key and HTTP Qdrant URLs although the client sends API-key authorization (`backend/app/config.py`, `backend/app/database/qdrant.py`). | Credentials could be sent without transport protection, or a production vector service could run unauthenticated. | Fixed at configuration boundary: production requires PostgreSQL `DATABASE_URL`, non-empty `QDRANT_API_KEY`, and HTTPS `QDRANT_URL`; plain HTTP is restricted to localhost/loopback or the Compose `qdrant` service in development. Compose now configures the Qdrant server key and allows a separate container URL. |
+
+### Current verification snapshot
+
+- Environment: local Windows, Python 3.14.7; FastAPI 0.163.2, Starlette 1.10.0, HTTPX 0.28.1, AnyIO 4.16.0, SQLAlchemy 2.1.9, Alembic 1.20.1, psycopg 3.3.9, qdrant-client 1.20.0, Pydantic 2.14.3, pydantic-settings 2.16.3, PyJWT 2.15.1, pwdlib 0.4.2, pytest 8.4.2. Node v24.19.0, npm 11.17.0; frontend versions are locked in `frontend/package-lock.json`.
+- `python -m compileall backend/app backend/tests`: passed.
+- Security suite: **57 passed** on Python 3.14.7, including request-byte/streaming, archive, configuration, authorization-boundary and provider/citation tests.
+- Authentication rate-limit unit tests (database-backed SQLite behavior): **4 passed**. The route-level HTTP tests are present but local execution is affected by the Windows Python 3.14 event-loop socket-pair stall described below; supported Python 3.12 CI remains the required verification.
+- Frontend: `npm run typecheck`, `npm run lint`, `npm test` (**137 passed, 20 files**), and `npm run build` succeeded. Vite emitted existing dependency annotation and bundle-size warnings; the build completed successfully.
+- Backend collection: **378 tests** were collected in the final local run. `python -m pytest backend/tests -vv` stalled at `backend/tests/test_audit.py::test_login_success_and_failure_are_audited_without_credentials` under Python 3.14.7 before a final summary. The runtime trace is the Windows asyncio socket-pair `accept()` stall documented in Phase 9. No tests were deselected to produce a pass.
+- Alembic history is valid through `0006_auth_rate_limits`; offline upgrade and downgrade SQL both generated successfully. No live migration was run.
+- FastAPI import/OpenAPI generation succeeded (17 paths in development configuration). Docker Compose YAML parsed and showed `postgres`, `qdrant`, and `backend`; the Docker CLI is unavailable, so `docker compose config` and container tests were not run.
+- Release packaging validator passed with **108 source entries** after the final changes; `.env` is absent.
+- No live PostgreSQL, Qdrant, LLM, Docker, reverse-proxy, TLS, load or deployment integration was performed. Local Python 3.12 is not installed. The existing GitHub Actions job uses Python 3.12; this commit’s workflow result must be recorded before treating the supported-runtime backend suite as verified.
+
+### Production conditions and residual risks
+
+- Set `APP_ENV=production`, `DEBUG=false`, a unique randomly generated `SECRET_KEY`, PostgreSQL `DATABASE_URL`, HTTPS `QDRANT_URL`, `QDRANT_API_KEY`, and exact comma-separated `TRUSTED_HOSTS` before startup. Secrets must be delivered by the deployment secret manager, never committed in `.env` or printed.
+- If behind a proxy, set `TRUSTED_PROXY_CIDRS` only to the actual ingress source networks. The proxy must validate `Host`, strip untrusted forwarded headers, append the verified client address, terminate HTTPS, enforce request-size/time/concurrency limits, and forward only to the application. The ASGI byte cap and per-file upload cap remain active.
+- Auth throttling uses shared PostgreSQL state, but does not replace edge rate/concurrency controls for PDF parsing, embeddings, retrieval, generation or other resource-heavy routes. At the 100,000 bucket cap, new auth clients fail closed until cleanup frees capacity; monitor this and size/retain the table operationally.
+- Keep PostgreSQL and Qdrant private; configure database TLS when crossing an untrusted network, authenticated HTTPS to remote Qdrant, monitored backups, and rehearsed restores. Audit append-only triggers do not prevent a privileged database owner/superuser from tampering.
+- Existing tenant and PostgreSQL ACL checks, stale-Qdrant defense, generation context boundary, citation validation, memory-only frontend tokens, tenant-scoped query keys/cancellation, and escaped React text rendering remain in place according to source review and existing tests. LLM grounding cannot prove semantic entailment or eliminate prompt-injection effects.
+- No dependency advisory scanner or independent secret scanner against all historical commit objects was run as part of this local pass. The working tree has no `.env`; production credentials and build artifacts are not included by the release archive policy.
+
+**Current release verdict: Not ready — a supported-runtime full backend run and live deployment validation remain outstanding.** This assessment does not claim production readiness or penetration-test certification.
+
 Assessment date: 2026-11-19
 Scope: application source, unit tests, configuration, Docker Compose, and offline Alembic validation in this workspace. This is not a certification or a production penetration test.
 
@@ -74,14 +111,14 @@ Labels used below: **Confirmed vulnerability** means a demonstrable unsafe code 
 
 ## Potential weaknesses and untested areas
 
-1. **Potential weakness — rate limiting:** No application-level rate limiter was found for login, upload, embedding, retrieval, generation, or permission synchronization. Do not run load tests against production. Deploy bounded rate limits and concurrency quotas at a trusted gateway or server layer, especially for login and model/embedding workloads.
-2. **Potential weakness — ingress limits:** Configure a bounded request size and timeout in the trusted reverse proxy and ASGI server; no reverse proxy is configured in this local Compose stack.
-3. **Potential weakness — host validation:** No `TrustedHostMiddleware` or trusted-proxy policy was found. This matters if deployed behind a proxy that uses `Host` to construct absolute URLs or cache keys; impact depends on that deployment.
-4. **Potential weakness — Qdrant credentials:** Qdrant API-key configuration exists, but Docker Compose permits an empty key and relies on a private service network plus loopback host binding. Production deployments should configure Qdrant authentication and network restrictions.
+1. **Potential weakness — rate limiting coverage:** Shared application-level throttling now protects login (10 per client per 60 seconds) and registration (5 per client per hour). Upload, embedding, retrieval, generation, and permission synchronization do not have application-level rate limits or concurrency quotas. Apply bounded limits at a trusted gateway/server, especially for resource-intensive endpoints; do not run uncontrolled load tests against production.
+2. **Deployment requirement — ingress limits and proxy trust:** The application counts actual ASGI request bytes and limits each uploaded file, but the ASGI server and trusted reverse proxy must independently enforce request-size, header-size, body-read timeout, and connection/concurrency limits. No reverse proxy is configured in this local Compose stack. Configure `TRUSTED_PROXY_CIDRS` only for actual proxy source networks, and ensure the proxy strips/normalizes forwarded headers.
+3. **Deployment requirement — host validation:** Production now requires exact `TRUSTED_HOSTS` and installs `TrustedHostMiddleware`. The deployment must supply the real hostnames and topology; development can leave this unset. Host/proxy behavior at the real ingress remains untested.
+4. **Deployment requirement — Qdrant network security:** Production configuration now requires `QDRANT_API_KEY` and an HTTPS `QDRANT_URL`; Compose passes the configured key to the Qdrant service. Development Compose can use a blank key and HTTP on its private service network. Production firewalling, TLS termination, key rotation, and private network policy were not verified.
 5. **Potential weakness — database-owner tampering:** Audit triggers and application guards provide append-only behavior for normal roles, not protection from database owners/superusers or privileged infrastructure operators.
 6. **Not tested — concurrent load/resource exhaustion:** No load, parser stress, model concurrency, or rate-limit tests were run. The PDF upload/page limits and request byte cap bound individual input sizes but do not bound concurrent work.
 7. **Not tested — live integration:** PostgreSQL (`127.0.0.1:5432`) and Qdrant (`127.0.0.1:6333`) were unavailable. No live LLM request was made. Docker was unavailable.
-8. **Potential local test-runtime limitation:** Python 3.12 is unavailable on this Windows workstation. Python 3.14.7's TestClient hangs in AnyIO portal startup on an unauthenticated route; a prior minimal TestClient app reproduced the Windows asyncio `_fallback_socketpair()` stall. GitHub Actions on Ubuntu/Python 3.12 completed the complete suite. This local runtime limitation does not block the supported CI result.
+8. **Potential local test-runtime limitation:** Python 3.12 is unavailable on this Windows workstation. Python 3.14.7's TestClient/ASGI sync-endpoint execution stalls in AnyIO portal startup; the new auth rate-limit route tests also stall locally at this boundary, while their direct database/counter tests pass. A prior minimal TestClient app reproduced the Windows asyncio `_fallback_socketpair()` stall. GitHub Actions on Ubuntu/Python 3.12 is the supported environment for the complete suite; this Phase 10.8 commit still requires its own CI run.
 9. **Not tested — pre-existing repository history:** The remote was empty before the initial commit, so there was no earlier history to inspect for secrets. `.env` is absent and ignored by `.gitignore`; if credentials from the previously removed local file were ever shared elsewhere, rotate them.
 
 ## Verification results

@@ -1,5 +1,6 @@
 from functools import lru_cache
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
+import re
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator, model_validator
@@ -43,6 +44,28 @@ def validate_llm_endpoint(url: str, app_env: str) -> None:
         raise ValueError("HTTP LLM endpoints are allowed only for development loopback hosts")
 
 
+def validate_qdrant_endpoint(url: str, app_env: str) -> None:
+    """Protect the Qdrant API key in transit; HTTP is limited to local development."""
+    try:
+        parsed = urlsplit(url)
+        scheme = parsed.scheme.casefold()
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("QDRANT_URL must be a valid HTTPS URL") from exc
+    if (not hostname or any(char.isspace() for char in url) or parsed.username is not None or
+            parsed.password is not None or parsed.query or parsed.fragment or scheme not in {"https", "http"}):
+        raise ValueError("QDRANT_URL must be a valid HTTPS URL")
+    try:
+        is_local = ip_address(hostname).is_loopback
+    except ValueError:
+        is_local = hostname.casefold() in {"localhost", "qdrant"}
+    if scheme == "https":
+        return
+    if app_env.strip().casefold() != "development" or not is_local:
+        raise ValueError("QDRANT_URL HTTP endpoints are allowed only for local development")
+
+
 class Settings(BaseSettings):
     app_name: str = "SecureRAG"
     app_env: str = "development"
@@ -52,6 +75,8 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None
     secret_key: SecretStr | None = None
+    trusted_hosts: str = ""
+    trusted_proxy_cidrs: str = ""
     access_token_expire_minutes: int = 30
     jwt_issuer: str = "securerag"
     jwt_audience: str = "securerag-api"
@@ -91,8 +116,40 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_token_settings(self) -> "Settings":
-        if self.app_env.strip().casefold() in {"production", "prod"} and self.debug:
+        production = self.app_env.strip().casefold() in {"production", "prod"}
+        if production and self.debug:
             raise ValueError("DEBUG must be disabled in production")
+        if production:
+            secret = self.secret_key.get_secret_value() if self.secret_key else ""
+            normalized_secret = secret.casefold()
+            placeholders = (
+                "change-me", "change_me", "your-secret", "replace-me", "replace-with",
+                "random-secret", "at-least-32-bytes", "example", "dev-secret", "test-secret",
+            )
+            if (len(secret.encode("utf-8")) < 32 or len(set(secret)) < 8 or
+                    any(marker in normalized_secret for marker in placeholders)):
+                raise ValueError("A strong non-placeholder SECRET_KEY is required in production")
+            hosts = [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
+            if not hosts or any("*" in host for host in hosts):
+                raise ValueError("Explicit TRUSTED_HOSTS are required in production")
+            if (not self.database_url or not self.database_url.strip() or
+                    not self.database_url.casefold().startswith(("postgresql://", "postgresql+psycopg://"))):
+                raise ValueError("A PostgreSQL DATABASE_URL is required in production")
+            qdrant_key = self.qdrant_api_key.get_secret_value() if self.qdrant_api_key else ""
+            if not qdrant_key.strip():
+                raise ValueError("QDRANT_API_KEY is required in production")
+        hosts = [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
+        for host in hosts:
+            hostname = host[2:] if host.startswith("*.") else host
+            if (not hostname or "*" in hostname or re.search(r"[\s/@?#:]", hostname) or
+                    any(not label for label in hostname.rstrip(".").split("."))):
+                raise ValueError("TRUSTED_HOSTS contains an invalid host")
+        proxy_cidrs = [cidr.strip() for cidr in self.trusted_proxy_cidrs.split(",") if cidr.strip()]
+        try:
+            for cidr in proxy_cidrs:
+                ip_network(cidr, strict=False)
+        except ValueError as exc:
+            raise ValueError("TRUSTED_PROXY_CIDRS must contain valid IP networks") from exc
         if self.access_token_expire_minutes < 1 or self.access_token_expire_minutes > 60:
             raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must be between 1 and 60")
         if not self.jwt_issuer.strip() or not self.jwt_audience.strip():
@@ -108,6 +165,7 @@ class Settings(BaseSettings):
         if self.llm_provider.strip().casefold() != "openai_compatible":
             raise ValueError("LLM_PROVIDER must be openai_compatible")
         validate_llm_endpoint(self.llm_base_url, self.app_env)
+        validate_qdrant_endpoint(self.qdrant_url, self.app_env)
         if not self.llm_model.strip():
             raise ValueError("LLM model must be configured")
         if not 0 <= self.llm_temperature <= 2 or not 1 <= self.llm_max_output_tokens <= 16384:

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_active_user
 from app.auth.security import TokenConfigurationError
+from app.auth.rate_limit import enforce_auth_rate_limit
 from app.auth.service import (
     DuplicateEmailError,
     InactiveUserError,
@@ -22,10 +23,18 @@ from app.users.schemas import TokenResponse, UserCreate, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 SessionDependency = Annotated[Session, Depends(get_db)]
+LOGIN_LIMIT = 10
+LOGIN_WINDOW_SECONDS = 60
+REGISTRATION_LIMIT = 5
+REGISTRATION_WINDOW_SECONDS = 3600
 
 
 @router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-def register(payload: UserCreate, session: SessionDependency) -> User:
+def register(payload: UserCreate, session: SessionDependency, request: Request) -> User:
+    enforce_auth_rate_limit(
+        request, session, category="register", maximum=REGISTRATION_LIMIT,
+        window_seconds=REGISTRATION_WINDOW_SECONDS,
+    )
     try:
         return register_user(session, email=str(payload.email), password=payload.password, full_name=payload.full_name)
     except DuplicateEmailError as exc:
@@ -36,6 +45,10 @@ def register(payload: UserCreate, session: SessionDependency) -> User:
 def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()], session: SessionDependency, request: Request,
 ) -> TokenResponse:
+    enforce_auth_rate_limit(
+        request, session, category="login", maximum=LOGIN_LIMIT,
+        window_seconds=LOGIN_WINDOW_SECONDS,
+    )
     try:
         user, token = authenticate_user(session, email=form.username, password=form.password)
     except InvalidCredentialsError as exc:

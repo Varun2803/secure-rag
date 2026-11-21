@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.health import router as health_router
@@ -176,9 +177,21 @@ def create_app() -> FastAPI:
                 logger.exception("Failed to dispose PostgreSQL engine")
             logger.info("Stopped %s", settings.app_name)
 
-    application = FastAPI(title=settings.app_name, version="1.0.0",
-                          description="Permission-aware multi-tenant RAG foundation",
-                          debug=settings.debug, lifespan=lifespan)
+    production = settings.app_env.strip().casefold() in {"production", "prod"}
+    documentation_path = None if production else f"{settings.api_v1_prefix}/openapi.json"
+    application = FastAPI(
+        title=settings.app_name,
+        version="1.0.0",
+        description="Permission-aware multi-tenant RAG foundation",
+        debug=settings.debug,
+        lifespan=lifespan,
+        openapi_url=documentation_path,
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+    )
+    trusted_hosts = [host.strip() for host in settings.trusted_hosts.split(",") if host.strip()]
+    if trusted_hosts:
+        application.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
     application.include_router(health_router, prefix=settings.api_v1_prefix)
     application.include_router(auth_router, prefix=settings.api_v1_prefix)
     application.include_router(tenants_router, prefix=settings.api_v1_prefix)

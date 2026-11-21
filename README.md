@@ -63,12 +63,18 @@ $secretBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
 
 Paste the value into `.env`. The signing secret must be at least 32 bytes. Keep `.env` private and ignored by Git; do not use this key across environments. Access tokens are HS256 signed, issuer and audience checked, and expire within 1–60 minutes (30 by default).
 
+For production, `APP_ENV=production` requires `DEBUG=false`, a strong non-placeholder `SECRET_KEY`, PostgreSQL `DATABASE_URL`, an authenticated HTTPS Qdrant endpoint, and an explicit comma-separated `TRUSTED_HOSTS` list containing exact public hostnames. Wildcards are rejected. The configured host list is enforced with `TrustedHostMiddleware`. Set `TRUSTED_PROXY_CIDRS` only to actual ingress proxy networks; only then is the rightmost valid address from `X-Forwarded-For` used for authentication throttling. The proxy must strip or normalize incoming forwarding headers and append the verified client address. Forwarded scheme headers are not trusted by the application.
+
+Login is limited to 10 attempts per client address per 60 seconds; registration is limited to 5 attempts per address per hour. Counters are shared through PostgreSQL and the `0006_auth_rate_limits` migration, stale rows are pruned in bounded batches, and storage has a hard row cap that fails closed with HTTP 503 for new buckets at capacity. Add independent edge rate and concurrency limits at the trusted reverse proxy, especially for expensive document/model workloads.
+
 Apply the current PostgreSQL schema, including audit logs, before using the application:
 
 ```powershell
 $env:PYTHONPATH = (Join-Path (Get-Location) "backend")
 python -m alembic -c alembic.ini upgrade head
 ```
+
+The schema includes the shared authentication rate-limit table (`0006_auth_rate_limits`). Do not run the application against a schema that has not been migrated.
 
 ## Docker setup
 
@@ -279,6 +285,8 @@ The archive is written to `dist/SecureRAG-phase9.zip`. Packaging uses an explici
 - **Database refused connection**: check `docker compose ps`; local Python uses host `localhost`, while backend containers use `postgres`.
 - **Qdrant unavailable**: check Compose service health; use `localhost:6333` locally or `qdrant:6333` from the backend container.
 - **Authentication returns 503**: set a strong `SECRET_KEY` in `.env` and restart the backend.
+- **Production startup rejects configuration**: set `APP_ENV=production`, `DEBUG=false`, a unique randomly generated `SECRET_KEY`, and `TRUSTED_HOSTS` to the exact public hostname(s); apply all Alembic migrations before serving traffic.
+- **Authentication returns 429**: wait for the `Retry-After` interval. The database-backed limits are shared across backend workers; configure additional edge limits for deployments behind a reverse proxy.
 - **Authentication routes fail with database errors**: ensure PostgreSQL is reachable and `python -m alembic -c alembic.ini upgrade head` has completed.
 - **Embedding model unavailable**: check `EMBEDDING_MODEL_NAME`, device/PyTorch compatibility, first-use network access, and the Hugging Face model cache.
 - **Document upload returns 503**: the status endpoint exposes only a sanitized stage code. Verify the Alembic migration, Qdrant availability and collection dimension, storage permissions, and model loading.
@@ -292,3 +300,7 @@ The archive is written to `dist/SecureRAG-phase9.zip`. Packaging uses an explici
 The ASGI application counts incoming request bytes as they are received and stops parsing once the configured upload size plus 1 MiB of multipart/form overhead is exceeded. It also rejects malformed or oversized declared `Content-Length` values before multipart parsing. The document storage layer continues to enforce the exact per-file upload limit.
 
 Deployments behind a trusted reverse proxy should configure an independent request-body limit at that proxy (at least the application's per-file limit plus the documented multipart allowance), along with request timeouts. The application byte counter remains enabled as defense in depth; proxy limits do not replace it.
+
+## Production deployment security
+
+Production settings fail closed unless PostgreSQL, a strong non-placeholder `SECRET_KEY`, an authenticated HTTPS `QDRANT_URL`, a nonempty `QDRANT_API_KEY`, and exact `TRUSTED_HOSTS` are configured. Interactive OpenAPI/Swagger/ReDoc documentation is disabled in production. Configure secrets through the deployment secret manager, use TLS for browser ingress and external database/vector traffic, and keep PostgreSQL and Qdrant on private networks. Configure the reverse proxy to validate the public Host, strip untrusted forwarded headers, enforce request/time/concurrency limits, and forward only from known ingress. If `TRUSTED_PROXY_CIDRS` is set, configure the proxy to append the verified client address; all other forwarding sources are ignored. Rate limits for login and registration are shared through PostgreSQL; add gateway limits for document/model workloads. Back up PostgreSQL and Qdrant consistently and rehearse restore procedures before deployment.

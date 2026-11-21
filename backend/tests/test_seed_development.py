@@ -206,7 +206,11 @@ def test_missing_records_are_created_only_for_active_eligible_pairs(
 
 
 def test_seed_main_refuses_production_before_opening_database(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.seed_development.get_settings", lambda: Settings(app_env="production"))
+    monkeypatch.setattr("app.seed_development.get_settings", lambda: Settings(
+        app_env="production", secret_key="0123456789abcdef0123456789abcdef",
+        trusted_hosts="api.example.com", database_url="postgresql+psycopg://user:password@db.example.com/securerag",
+        qdrant_url="https://qdrant.example.com", qdrant_api_key="qdrant-test-api-key",
+    ))
 
     def should_not_connect():
         raise AssertionError("production seed attempted to open a database session")
@@ -220,7 +224,11 @@ def test_seed_operation_itself_refuses_production(
 ) -> None:
     from app.seed_development import ProductionSeedRefused
 
-    monkeypatch.setattr("app.seed_development.get_settings", lambda: Settings(app_env="production"))
+    monkeypatch.setattr("app.seed_development.get_settings", lambda: Settings(
+        app_env="production", secret_key="0123456789abcdef0123456789abcdef",
+        trusted_hosts="api.example.com", database_url="postgresql+psycopg://user:password@db.example.com/securerag",
+        qdrant_url="https://qdrant.example.com", qdrant_api_key="qdrant-test-api-key",
+    ))
     with test_session_factory() as session:
         with pytest.raises(ProductionSeedRefused):
             seed_development(session, password=_DEVELOPMENT_PASSWORD)
