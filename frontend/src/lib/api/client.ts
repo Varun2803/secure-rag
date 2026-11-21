@@ -8,7 +8,16 @@ export type ApiRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
   formData?: FormData
   urlEncoded?: URLSearchParams | Record<string, string>
   accessToken?: string
+  notifyUnauthorized?: boolean
   onRequestId?: (requestId: string) => void
+}
+
+type UnauthorizedHandler = (accessToken: string, requestId?: string) => void
+const unauthorizedHandlers = new Set<UnauthorizedHandler>()
+
+export function subscribeToUnauthorized(handler: UnauthorizedHandler) {
+  unauthorizedHandlers.add(handler)
+  return () => { unauthorizedHandlers.delete(handler) }
 }
 
 function requestBody(options: ApiRequestOptions, headers: Headers): BodyInit | undefined {
@@ -50,6 +59,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   delete (requestOptions as RequestInit & { formData?: FormData }).formData
   delete (requestOptions as RequestInit & { urlEncoded?: URLSearchParams | Record<string, string> }).urlEncoded
   delete (requestOptions as RequestInit & { accessToken?: string }).accessToken
+  delete (requestOptions as RequestInit & { notifyUnauthorized?: boolean }).notifyUnauthorized
   delete (requestOptions as RequestInit & { onRequestId?: (requestId: string) => void }).onRequestId
 
   let response: Response
@@ -62,6 +72,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   const requestId = response.headers.get('x-request-id') ?? undefined
   if (requestId) options.onRequestId?.(requestId)
+  if (response.status === 401 && options.accessToken && options.notifyUnauthorized !== false) {
+    for (const handler of unauthorizedHandlers) handler(options.accessToken, requestId)
+  }
   if (!response.ok) throw ApiError.fromResponse(response.status, requestId)
   if (response.status === 204) return undefined as T
 

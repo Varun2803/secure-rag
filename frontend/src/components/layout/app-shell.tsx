@@ -1,8 +1,12 @@
-import { Layers3, ShieldCheck } from 'lucide-react'
+import { Layers3, LogOut, ShieldCheck } from 'lucide-react'
 import { Outlet } from 'react-router-dom'
 import { ThemeToggle } from '@/app/providers/theme-provider'
+import { Button } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/auth-context'
 
 export function AppShell() {
+  const { user, logout } = useAuth()
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
@@ -43,8 +47,13 @@ export function AppShell() {
             <p className="hidden text-sm text-muted-foreground lg:block">Enterprise knowledge security</p>
             <div className="ml-auto flex items-center gap-3">
               <span className="hidden rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
-                Foundation
+                Workspace
               </span>
+              <span className="hidden max-w-40 truncate text-sm font-medium sm:block" title={user?.full_name}>{user?.full_name}</span>
+              <Button aria-label="Sign out" onClick={logout} size="sm" variant="outline">
+                <LogOut aria-hidden="true" className="size-4" />
+                <span className="hidden sm:inline">Sign out</span>
+              </Button>
               <ThemeToggle />
             </div>
           </header>

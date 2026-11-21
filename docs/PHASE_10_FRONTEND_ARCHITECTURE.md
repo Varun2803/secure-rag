@@ -1,6 +1,6 @@
 # SecureRAG Phase 10 — Frontend Architecture Proposal
 
-**Status:** Architecture proposal only. No frontend application, feature pages, or authentication UI has been implemented. This document is for review before frontend implementation begins.
+**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review. Later subphases have not started.
 
 ## 1. Technology stack
 
@@ -173,7 +173,7 @@ Build responsive navigation that collapses to a drawer on narrow screens. Use ex
 7. **10.7 — Retrieval and Grounded Answers:** Semantic search and generated answers/citations using only existing backend endpoints.
 8. **10.8 — Security Hardening and Release Review:** Accessibility, responsive polish, CSP/reverse-proxy deployment notes, security tests, dependency review, and end-to-end workflow verification.
 
-This document records the completed 10.1 architecture proposal. Frontend implementation, including 10.2 and later subphases, has not started.
+10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review; 10.4 and later subphases have not started.
 
 ## 12. Backend additions required and known gaps
 
@@ -200,7 +200,7 @@ The current [SECURITY_ASSESSMENT.md](../SECURITY_ASSESSMENT.md) reports reviewed
 
 ## 14. Proposed local run commands (for the later implementation)
 
-From repository root in PowerShell, after 10.2 is approved and created:
+From repository root in PowerShell, with the 10.2 foundation and current 10.3 authentication implementation:
 
 ```powershell
 cd frontend
