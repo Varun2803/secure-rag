@@ -1,6 +1,6 @@
 # SecureRAG Phase 10 — Frontend Architecture Proposal
 
-**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review; 10.4 tenant and membership workspace approved; 10.5 document management implemented and awaiting independent review. 10.6 and later subphases have not started.
+**Status:** 10.1 architecture approved; 10.2 frontend foundation implemented and approved; 10.3 authentication implemented and awaiting review; 10.4 tenant and membership workspace approved; 10.5 document management approved; 10.6 permission management implemented and awaiting independent review. 10.7 and 10.8 have not started.
 
 ## 1. Technology stack
 
@@ -173,11 +173,15 @@ Build responsive navigation that collapses to a drawer on narrow screens. Use ex
 7. **10.7 — Retrieval and Grounded Answers:** Semantic search and generated answers/citations using only existing backend endpoints.
 8. **10.8 — Security Hardening and Release Review:** Accessibility, responsive polish, CSP/reverse-proxy deployment notes, security tests, dependency review, and end-to-end workflow verification.
 
-10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review. 10.4 tenant and membership workspace is approved. 10.5 document management is implemented and awaiting independent review; 10.6 and later subphases have not started.
+10.1 architecture is approved, and 10.2 foundation is implemented and approved. 10.3 authentication is implemented and awaiting review. 10.4 tenant and membership workspace is approved. 10.5 document management is approved. 10.6 permission management is implemented and awaiting independent review; 10.7 and 10.8 have not started.
 
 ### Phase 10.5 implementation notes
 
-The document workspace uses the existing tenant-scoped list, detail, status, and synchronous PDF upload endpoints. Uploads omit optional ACL fields and therefore retain the backend defaults: private with empty role and user grants. The UI explicitly explains that the uploader receives no implicit content access; permission editing remains in Phase 10.6. Processing status is persisted and refreshed manually; the UI does not simulate background progress. Lists and detail panels render an explicit metadata projection and omit storage filenames, hashes, and raw ACL identifiers. No preview, download, delete, or sharing controls are provided.
+The document workspace uses the existing tenant-scoped list, detail, status, and synchronous PDF upload endpoints. Uploads omit optional ACL fields and therefore retain the backend defaults: private with empty role and user grants. The UI explicitly explains that the uploader receives no implicit content access. Processing status is persisted and refreshed manually; the UI does not simulate background progress. Lists and detail panels render an explicit metadata projection and omit storage filenames, hashes, and raw ACL identifiers. No preview, download, delete, or sharing controls are provided.
+
+### Phase 10.6 implementation notes
+
+The document workspace exposes permission management only to active tenant OWNER and ADMIN roles. It reads and replaces permissions through the existing tenant/document-scoped GET and PUT endpoints. The editor replaces the complete ACL after an accessible confirmation, sources user choices from active memberships returned by the existing membership endpoint, and omits inactive users. PostgreSQL remains authoritative; the UI displays only the synchronization status returned by the backend and provides no retry or client-side Qdrant behavior. Public ACL access is tenant-scoped, an empty private ACL denies content access, and neither classification, uploader status, nor OWNER/ADMIN role grants implicit content access. Permission query keys include tenant and document IDs so the active tenant provider can cancel and remove them on tenant switches.
 
 ## 12. Backend additions required and known gaps
 

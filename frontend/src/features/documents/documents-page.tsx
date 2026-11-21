@@ -14,6 +14,7 @@ import { tenantQueryKey } from '@/features/tenants/query-keys'
 import { ApiError } from '@/lib/api/api-error'
 import { getDocument, getDocumentStatus, listDocuments, uploadDocument } from './api'
 import type { DocumentRecord } from './api'
+import { PermissionEditor } from '@/features/permissions/permission-editor'
 
 const PAGE_SIZE = 50
 const MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -121,7 +122,7 @@ function UploadPanel({ tenantId, role, onUploaded }: { tenantId: string; role: T
       <CardDescription>PDF files only · Maximum 20 MiB and 500 pages. The server verifies the actual file format.</CardDescription>
     </CardHeader>
     <CardContent>
-      <p className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">New uploads start private with no document-content grants. Classification labels do not grant access, and uploader status does not grant access. Permission management is provided in a later phase.</p>
+      <p className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">New uploads start private with no document-content grants. Classification labels do not grant access, and uploader status does not grant access. An OWNER or ADMIN can set an explicit document ACL.</p>
       {validationError && <p role="alert" className="mb-3 text-sm text-destructive">{validationError}</p>}
       {upload.isError && <p role="alert" className="mb-3 text-sm text-destructive">{safeDocumentError(upload.error, 'upload')}</p>}
       {successMessage && <p role="status" className="mb-3 text-sm text-emerald-700 dark:text-emerald-300">{successMessage}</p>}
@@ -184,8 +185,10 @@ export function DocumentsPage() {
   const role = activeTenant?.role
   const [pagination, setPagination] = useState<{ tenantId: string | undefined; offset: number }>({ tenantId, offset: 0 })
   const [selection, setSelection] = useState<{ tenantId: string | undefined; documentId: string | null }>({ tenantId, documentId: null })
+  const [permissionSelection, setPermissionSelection] = useState<{ tenantId: string | undefined; documentId: string | null }>({ tenantId, documentId: null })
   const offset = pagination.tenantId === tenantId ? pagination.offset : 0
   const selectedDocumentId = selection.tenantId === tenantId ? selection.documentId : null
+  const selectedPermissionDocumentId = permissionSelection.tenantId === tenantId ? permissionSelection.documentId : null
 
   const documents = useQuery({
     queryKey: tenantId ? tenantQueryKey(tenantId, 'documents', 'list', { limit: PAGE_SIZE, offset }) : ['tenant', 'none', 'documents'],
@@ -220,11 +223,12 @@ export function DocumentsPage() {
             const item = displayProjection(record)
             return <li key={item.id} className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0"><h3 className="break-words font-medium">{item.originalFilename}</h3><div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{formatFileSize(item.fileSize)}</span><span>{formatDate(item.uploadedAt)}</span><span>{item.pageCount} pages</span><span>{item.chunkCount} chunks</span><span>{item.classification}</span></div></div>
-              <div className="flex items-center gap-3"><Badge variant={statusVariant(item.status)}>{item.status}</Badge><Button size="sm" variant="outline" aria-expanded={selectedDocumentId === item.id} onClick={() => setSelection({ tenantId, documentId: selectedDocumentId === item.id ? null : item.id })}>{selectedDocumentId === item.id ? 'Hide details' : 'View details'}</Button></div>
+              <div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(item.status)}>{item.status}</Badge><Button size="sm" variant="outline" aria-expanded={selectedDocumentId === item.id} onClick={() => setSelection({ tenantId, documentId: selectedDocumentId === item.id ? null : item.id })}>{selectedDocumentId === item.id ? 'Hide details' : 'View details'}</Button>{role && ['OWNER', 'ADMIN'].includes(role) && <Button size="sm" variant="outline" aria-expanded={selectedPermissionDocumentId === item.id} onClick={() => setPermissionSelection({ tenantId, documentId: selectedPermissionDocumentId === item.id ? null : item.id })}>{selectedPermissionDocumentId === item.id ? 'Hide permissions' : 'Manage permissions'}</Button>}</div>
             </li>
           })}
         </ul>}
         {selectedDocumentId && documents.data?.items.some((item) => item.id === selectedDocumentId) && <div className="mt-5"><DocumentDetails tenantId={activeTenant.tenant.id} documentId={selectedDocumentId} /></div>}
+        {selectedPermissionDocumentId && role && ['OWNER', 'ADMIN'].includes(role) && documents.data?.items.some((item) => item.id === selectedPermissionDocumentId) && <div className="mt-5"><PermissionEditor key={`${activeTenant.tenant.id}:${selectedPermissionDocumentId}`} tenantId={activeTenant.tenant.id} documentId={selectedPermissionDocumentId} tenantRole={role} /></div>}
         {documents.data && total > PAGE_SIZE && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4"><p className="text-sm text-muted-foreground">Page {currentPage} of {pageCount}</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={offset === 0 || documents.isFetching} onClick={() => setPagination({ tenantId, offset: Math.max(0, offset - PAGE_SIZE) })}>Previous</Button><Button variant="outline" size="sm" disabled={offset + PAGE_SIZE >= total || documents.isFetching} onClick={() => setPagination({ tenantId, offset: offset + PAGE_SIZE })}>Next</Button></div></div>}
       </CardContent>
     </Card>
