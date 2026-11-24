@@ -1,34 +1,27 @@
-.env
-.env.*
-**/.env
-**/.env.*
-.git
-.pytest_cache
-.venv
-venv
-env
-**/.venv
-**/venv
-**/env
-node_modules
-**/node_modules
-dist
-frontend/dist
-build
-.mypy_cache
-.ruff_cache
-.coverage
-htmlcov
-.idea
-.vscode
-**/__pycache__
+# Start with an empty build context, then admit only the runtime inputs used by
+# backend/Dockerfile. New repository files are excluded until deliberately added.
+**
+!backend/
+!backend/requirements.txt
+!backend/app/
+!backend/app/**
+!backend/alembic/
+!backend/alembic/**
+!alembic.ini
+
+# Re-exclude generated or sensitive paths even if they appear below an admitted
+# runtime directory.
+**/__pycache__/
 **/*.py[cod]
-**/.pytest_cache
+**/.pytest_cache/
+**/.venv/
+**/venv/
+**/tests/
+**/test_*.py
 **/*.tmp
 **/*.temp
 **/*.log
 **/*.bak
-**/*.swp
 **/*.pem
 **/*.key
 **/*.p12
@@ -37,5 +30,5 @@ htmlcov
 **/id_ed25519*
 **/credentials*
 **/secrets*
-**/Thumbs.db
-**/.DS_Store
+**/.env
+**/.env.*

@@ -25,11 +25,67 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  backend-volume-init:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    user: "0:0"
+    read_only: true
+    restart: "no"
+    network_mode: none
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import os
+        from pathlib import Path
+        for name in ("documents", "model-cache"):
+            root = Path("/var/lib/securerag/documents" if name == "documents" else "/var/cache/huggingface")
+            marker = root / ".securerag-owner-10001"
+            if not marker.exists():
+                for current, directories, files in os.walk(root, topdown=False):
+                    for filename in files:
+                        os.chown(os.path.join(current, filename), 10001, 10001, follow_symlinks=False)
+                    for directory in directories:
+                        path = os.path.join(current, directory)
+                        os.chown(path, 10001, 10001, follow_symlinks=False)
+                        if not os.path.islink(path):
+                            os.chmod(path, 0o750)
+                os.chown(root, 10001, 10001, follow_symlinks=False)
+                os.chmod(root, 0o750)
+                marker.touch(mode=0o600)
+                os.chown(marker, 10001, 10001, follow_symlinks=False)
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - documents_data:/var/lib/securerag/documents
+      - model_cache:/var/cache/huggingface
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    command:
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - ${BACKEND_WORKERS:-1}
+      - --timeout-graceful-shutdown
+      - ${BACKEND_UVICORN_GRACEFUL_SHUTDOWN_TIMEOUT:-30}
+    cpus: ${BACKEND_CPUS:-2.0}
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-4g}
+    pids_limit: ${BACKEND_PIDS_LIMIT:-256}
+    stop_grace_period: ${BACKEND_STOP_GRACE_PERIOD:-45s}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${BACKEND_TMPFS_SIZE:-256m},mode=0700,uid=10001,gid=10001
     environment:
       APP_NAME: ${APP_NAME:-SecureRAG}
       APP_ENV: ${APP_ENV:-development}
@@ -64,12 +120,16 @@ services:
       RAG_MAX_CONTEXT_TOKENS: ${RAG_MAX_CONTEXT_TOKENS:-6000}
       RAG_MAX_CONTEXT_CHUNKS: ${RAG_MAX_CONTEXT_CHUNKS:-8}
       RAG_MAX_ANSWER_TOKENS: ${RAG_MAX_ANSWER_TOKENS:-800}
-    volumes: ["documents_data:/var/lib/securerag/documents"]
+    volumes:
+      - documents_data:/var/lib/securerag/documents
+      - model_cache:/var/cache/huggingface
     ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]
     depends_on:
+      backend-volume-init: {condition: service_completed_successfully}
       postgres: {condition: service_healthy}
       qdrant: {condition: service_healthy}
 volumes:
   postgres_data:
   qdrant_data:
   documents_data:
+  model_cache:
